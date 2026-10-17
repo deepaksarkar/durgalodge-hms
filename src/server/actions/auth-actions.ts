@@ -4,7 +4,7 @@
 import { redirect } from 'next/navigation'
 import { prisma } from '@/lib/db'
 import { createSession, deleteSession, getSession } from '@/lib/session'
-import * as argon2 from 'argon2'
+import { verifyPassword } from '@/lib/password'
 import { z } from 'zod'
 
 const loginSchema = z.object({
@@ -35,7 +35,7 @@ export async function loginAction(prevState: LoginState | undefined, formData: F
       return { error: 'Invalid email or password' }
     }
 
-    const isValid = await argon2.verify(user.passwordHash, validation.data.password)
+    const isValid = await verifyPassword(validation.data.password, user.passwordHash)
     if (!isValid) {
       return { error: 'Invalid email or password' }
     }

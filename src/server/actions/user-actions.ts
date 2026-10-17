@@ -6,7 +6,7 @@ import { prisma } from '@/lib/db'
 import { Role } from '@prisma/client'
 import { z } from 'zod'
 import { getSession } from '@/lib/session'
-import * as argon2 from 'argon2'
+import { hashPassword } from '@/lib/password'
 
 const createUserSchema = z.object({
   name: z.string().min(2, 'Name is required'),
@@ -46,7 +46,7 @@ export async function createUser(data: z.infer<typeof createUserSchema>) {
     throw new Error(`User with email ${parsed.email} already exists`)
   }
 
-  const passwordHash = await argon2.hash(parsed.password)
+  const passwordHash = await hashPassword(parsed.password)
 
   const user = await prisma.user.create({
     data: {

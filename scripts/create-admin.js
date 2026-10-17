@@ -16,7 +16,7 @@ require('dotenv').config()
 const { Pool } = require('pg')
 const { PrismaPg } = require('@prisma/adapter-pg')
 const { PrismaClient } = require('@prisma/client')
-const argon2 = require('argon2')
+const bcrypt = require('bcryptjs')
 
 async function main() {
   const email = process.argv[2] || process.env.ADMIN_EMAIL
@@ -53,7 +53,8 @@ async function main() {
 
   console.log(`🔐 Creating or updating Administrator: ${email}...`)
 
-  const passwordHash = await argon2.hash(password)
+  const salt = await bcrypt.genSalt(12)
+  const passwordHash = await bcrypt.hash(password, salt)
 
   const user = await prisma.user.upsert({
     where: { email: email.toLowerCase().trim() },

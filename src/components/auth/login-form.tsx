@@ -91,7 +91,7 @@ export function LoginForm() {
         {/* Security badge footer */}
         <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
           <ShieldCheck className="w-4 h-4 text-emerald-500" />
-          <span>Argon2 Encrypted • HTTP-Only Secure Session Cookie</span>
+          <span>Bcrypt Encrypted • HTTP-Only Secure Session Cookie</span>
         </div>
       </div>
     </div>
