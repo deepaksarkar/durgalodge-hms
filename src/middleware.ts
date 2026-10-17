@@ -1,38 +1,25 @@
 // src/middleware.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { decrypt } from '@/lib/session'
 
 // Routes that don't require authentication
 const publicRoutes = ['/login']
 
-export async function middleware(req: NextRequest) {
-  try {
-    const path = req.nextUrl.pathname
-    const isPublicRoute = publicRoutes.includes(path)
+export function middleware(req: NextRequest) {
+  const path = req.nextUrl.pathname
+  const isPublicRoute = publicRoutes.some((route) => path.startsWith(route))
+  const hasSession = req.cookies.has('session')
 
-    // 1. Decrypt the session only if cookie exists
-    const cookie = req.cookies.get('session')?.value
-    let session = null
-
-    if (cookie) {
-      session = await decrypt(cookie)
-    }
-
-    // 2. Redirect unauthenticated users to login
-    if (!isPublicRoute && !session?.userId) {
-      return NextResponse.redirect(new URL('/login', req.nextUrl))
-    }
-
-    // 3. Redirect authenticated users away from login
-    if (isPublicRoute && session?.userId) {
-      return NextResponse.redirect(new URL('/dashboard', req.nextUrl))
-    }
-
-    return NextResponse.next()
-  } catch (error) {
-    console.error('Middleware execution error:', error)
-    return NextResponse.next()
+  // 1. Redirect unauthenticated users to login
+  if (!isPublicRoute && !hasSession) {
+    return NextResponse.redirect(new URL('/login', req.nextUrl))
   }
+
+  // 2. Redirect authenticated users away from login
+  if (path === '/login' && hasSession) {
+    return NextResponse.redirect(new URL('/dashboard', req.nextUrl))
+  }
+
+  return NextResponse.next()
 }
 
 export const config = {
