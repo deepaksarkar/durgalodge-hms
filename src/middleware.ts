@@ -6,24 +6,33 @@ import { decrypt } from '@/lib/session'
 const publicRoutes = ['/login']
 
 export async function middleware(req: NextRequest) {
-  const path = req.nextUrl.pathname
-  const isPublicRoute = publicRoutes.includes(path)
+  try {
+    const path = req.nextUrl.pathname
+    const isPublicRoute = publicRoutes.includes(path)
 
-  // 1. Decrypt the session from the cookie
-  const cookie = req.cookies.get('session')?.value
-  const session = await decrypt(cookie)
+    // 1. Decrypt the session only if cookie exists
+    const cookie = req.cookies.get('session')?.value
+    let session = null
 
-  // 2. Redirect unauthenticated users to login
-  if (!isPublicRoute && !session?.userId) {
-    return NextResponse.redirect(new URL('/login', req.nextUrl))
+    if (cookie) {
+      session = await decrypt(cookie)
+    }
+
+    // 2. Redirect unauthenticated users to login
+    if (!isPublicRoute && !session?.userId) {
+      return NextResponse.redirect(new URL('/login', req.nextUrl))
+    }
+
+    // 3. Redirect authenticated users away from login
+    if (isPublicRoute && session?.userId) {
+      return NextResponse.redirect(new URL('/dashboard', req.nextUrl))
+    }
+
+    return NextResponse.next()
+  } catch (error) {
+    console.error('Middleware execution error:', error)
+    return NextResponse.next()
   }
-
-  // 3. Redirect authenticated users away from login
-  if (isPublicRoute && session?.userId) {
-    return NextResponse.redirect(new URL('/dashboard', req.nextUrl))
-  }
-
-  return NextResponse.next()
 }
 
 export const config = {
