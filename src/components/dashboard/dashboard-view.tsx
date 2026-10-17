@@ -36,14 +36,13 @@ import {
   CartesianGrid
 } from 'recharts'
 import { TimeRangeFilter } from '@/server/actions/dashboard-actions'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 
 const COLORS = ['#d97706', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#64748b']
 
 export function DashboardView({ data }: { data: any }) {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const currentRange = (searchParams.get('range') as TimeRangeFilter) || 'today'
+  const currentRange = (data?.meta?.range as TimeRangeFilter) || 'today'
   const [isMounted, setIsMounted] = useState(false)
 
   React.useEffect(() => {
@@ -51,9 +50,7 @@ export function DashboardView({ data }: { data: any }) {
   }, [])
 
   const handleRangeChange = (range: TimeRangeFilter) => {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set('range', range)
-    router.push(`/dashboard?${params.toString()}`)
+    router.push(`/dashboard?range=${range}`)
   }
 
   const { kpis, charts } = data

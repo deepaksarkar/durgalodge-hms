@@ -46,228 +46,264 @@ export async function getDashboardData(options: {
       break
   }
 
-  // 1. Room Status Counts (Real-time snapshot)
-  const [totalRooms, availableRooms, occupiedRooms, cleaningRooms, maintenanceRooms, reservedRooms] = await Promise.all([
-    prisma.room.count({ where: { isActive: true } }),
-    prisma.room.count({ where: { isActive: true, status: 'AVAILABLE' } }),
-    prisma.room.count({ where: { isActive: true, status: 'OCCUPIED' } }),
-    prisma.room.count({ where: { isActive: true, status: 'CLEANING' } }),
-    prisma.room.count({ where: { isActive: true, status: 'MAINTENANCE' } }),
-    prisma.room.count({ where: { isActive: true, status: 'RESERVED' } }),
-  ])
+  try {
+    // 1. Room Status Counts (Real-time snapshot)
+    const [totalRooms, availableRooms, occupiedRooms, cleaningRooms, maintenanceRooms, reservedRooms] = await Promise.all([
+      prisma.room.count({ where: { isActive: true } }),
+      prisma.room.count({ where: { isActive: true, status: 'AVAILABLE' } }),
+      prisma.room.count({ where: { isActive: true, status: 'OCCUPIED' } }),
+      prisma.room.count({ where: { isActive: true, status: 'CLEANING' } }),
+      prisma.room.count({ where: { isActive: true, status: 'MAINTENANCE' } }),
+      prisma.room.count({ where: { isActive: true, status: 'RESERVED' } }),
+    ])
 
-  const occupancyRate = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0
+    const occupancyRate = totalRooms > 0 ? Math.round((occupiedRooms / totalRooms) * 100) : 0
 
-  // 2. Financial Metrics in Selected Period
-  // Payments received in period
-  const payments = await prisma.payment.findMany({
-    where: {
-      paymentDate: { gte: start, lte: end },
-    },
-    include: { booking: true },
-  })
-
-  // Group payments by method
-  const paymentsByMethod = {
-    CASH: 0,
-    UPI: 0,
-    CARD: 0,
-    BANK_TRANSFER: 0,
-    OTHER: 0,
-  }
-
-  let totalCollectedPaise = 0
-  for (const p of payments) {
-    const amt = p.isRefund ? -p.amount : p.amount
-    totalCollectedPaise += amt
-    if (p.method in paymentsByMethod) {
-      paymentsByMethod[p.method] += amt
-    }
-  }
-
-  // Expenses in selected period
-  const expenses = await prisma.expense.findMany({
-    where: {
-      date: { gte: start, lte: end },
-    },
-    include: { category: true },
-  })
-
-  let totalExpensesPaise = 0
-  let cashExpensesPaise = 0
-  for (const e of expenses) {
-    totalExpensesPaise += e.amount
-    if (e.method === 'CASH') {
-      cashExpensesPaise += e.amount
-    }
-  }
-
-  // Recognized Revenue in period (Bookings active or created in period)
-  const bookingsInPeriod = await prisma.booking.findMany({
-    where: {
-      status: { notIn: ['CANCELLED', 'NO_SHOW'] },
-      createdAt: { gte: start, lte: end },
-    },
-  })
-
-  const recognizedRevenuePaise = bookingsInPeriod.reduce((sum, b) => sum + b.totalAmount, 0)
-
-  // Net Operating Result = Recognized Revenue - Expenses
-  const netOperatingProfitPaise = recognizedRevenuePaise - totalExpensesPaise
-
-  // Cash Flow = Cash received - cash expenses
-  const cashFlowPaise = (paymentsByMethod.CASH || 0) - cashExpensesPaise
-
-  // 3. Operational Counters for Selected Period
-  const [checkInsCount, checkOutsCount, bookingsCreatedCount] = await Promise.all([
-    prisma.booking.count({
+    // 2. Financial Metrics in Selected Period
+    // Payments received in period
+    const payments = await prisma.payment.findMany({
       where: {
-        actualCheckIn: { gte: start, lte: end },
+        paymentDate: { gte: start, lte: end },
       },
-    }),
-    prisma.booking.count({
+      include: { booking: true },
+    })
+
+    // Group payments by method
+    const paymentsByMethod = {
+      CASH: 0,
+      UPI: 0,
+      CARD: 0,
+      BANK_TRANSFER: 0,
+      OTHER: 0,
+    }
+
+    let totalCollectedPaise = 0
+    for (const p of payments) {
+      const amt = p.isRefund ? -p.amount : p.amount
+      totalCollectedPaise += amt
+      if (p.method in paymentsByMethod) {
+        paymentsByMethod[p.method] += amt
+      }
+    }
+
+    // Expenses in selected period
+    const expenses = await prisma.expense.findMany({
       where: {
-        actualCheckOut: { gte: start, lte: end },
+        date: { gte: start, lte: end },
       },
-    }),
-    prisma.booking.count({
+      include: { category: true },
+    })
+
+    let totalExpensesPaise = 0
+    let cashExpensesPaise = 0
+    for (const e of expenses) {
+      totalExpensesPaise += e.amount
+      if (e.method === 'CASH') {
+        cashExpensesPaise += e.amount
+      }
+    }
+
+    // Recognized Revenue in period (Bookings active or created in period)
+    const bookingsInPeriod = await prisma.booking.findMany({
       where: {
+        status: { notIn: ['CANCELLED', 'NO_SHOW'] },
         createdAt: { gte: start, lte: end },
       },
-    }),
-  ])
-
-  // Outstanding balances across all active bookings
-  const activeBookings = await prisma.booking.findMany({
-    where: {
-      status: { in: ['RESERVED', 'CHECKED_IN'] },
-    },
-    include: { payments: true },
-  })
-
-  let pendingPaymentsPaise = 0
-  for (const b of activeBookings) {
-    const paid = b.payments.reduce((acc, p) => p.isRefund ? acc - p.amount : acc + p.amount, 0)
-    if (b.totalAmount > paid) {
-      pendingPaymentsPaise += (b.totalAmount - paid)
-    }
-  }
-
-  // 4. Daily Trend Breakdown (Past 7 or 14 days)
-  const trendDaysCount = range === 'month' ? 30 : 7
-  const trendStartDate = subDays(endOfDay(now), trendDaysCount - 1)
-  const trendInterval = eachDayOfInterval({ start: startOfDay(trendStartDate), end: endOfDay(now) })
-
-  const [allRecentPayments, allRecentExpenses] = await Promise.all([
-    prisma.payment.findMany({
-      where: { paymentDate: { gte: trendStartDate, lte: endOfDay(now) } },
-    }),
-    prisma.expense.findMany({
-      where: { date: { gte: trendStartDate, lte: endOfDay(now) } },
-    }),
-  ])
-
-  const dailyTrends = trendInterval.map((day) => {
-    const dayStr = format(day, 'yyyy-MM-dd')
-    const displayLabel = format(day, 'dd MMM')
-
-    const dayPayments = allRecentPayments.filter((p) => {
-      const pDay = format(toZonedTime(p.paymentDate, HOTEL_TIMEZONE), 'yyyy-MM-dd')
-      return pDay === dayStr
     })
 
-    const dayExpenses = allRecentExpenses.filter((e) => {
-      const eDay = format(toZonedTime(e.date, HOTEL_TIMEZONE), 'yyyy-MM-dd')
-      return eDay === dayStr
-    })
+    const recognizedRevenuePaise = bookingsInPeriod.reduce((sum, b) => sum + b.totalAmount, 0)
 
-    const revPaise = dayPayments.reduce((acc, p) => p.isRefund ? acc - p.amount : acc + p.amount, 0)
-    const expPaise = dayExpenses.reduce((acc, e) => acc + e.amount, 0)
+    // Net Operating Result = Recognized Revenue - Expenses
+    const netOperatingProfitPaise = recognizedRevenuePaise - totalExpensesPaise
 
-    return {
-      date: displayLabel,
-      revenueRupees: Math.round(revPaise / 100),
-      expenseRupees: Math.round(expPaise / 100),
-      netProfitRupees: Math.round((revPaise - expPaise) / 100),
-    }
-  })
+    // Cash Flow = Cash received - cash expenses
+    const cashFlowPaise = (paymentsByMethod.CASH || 0) - cashExpensesPaise
 
-  // 5. Revenue by Room Breakdown
-  const roomRevenueMap = await prisma.room.findMany({
-    include: {
-      bookings: {
-        where: { status: { notIn: ['CANCELLED', 'NO_SHOW'] } },
-        include: { payments: true },
+    // 3. Operational Counters for Selected Period
+    const [checkInsCount, checkOutsCount, bookingsCreatedCount] = await Promise.all([
+      prisma.booking.count({
+        where: {
+          actualCheckIn: { gte: start, lte: end },
+        },
+      }),
+      prisma.booking.count({
+        where: {
+          actualCheckOut: { gte: start, lte: end },
+        },
+      }),
+      prisma.booking.count({
+        where: {
+          createdAt: { gte: start, lte: end },
+        },
+      }),
+    ])
+
+    // Outstanding balances across all active bookings
+    const activeBookings = await prisma.booking.findMany({
+      where: {
+        status: { in: ['RESERVED', 'CHECKED_IN'] },
       },
-      type: true,
-    },
-  })
+      include: { payments: true },
+    })
 
-  const revenueByRoom = roomRevenueMap
-    .map((room) => {
-      const totalPaise = room.bookings.reduce((sum, b) => {
-        const paid = b.payments.reduce((pSum, p) => pSum + p.amount, 0)
-        return sum + paid
-      }, 0)
+    let pendingPaymentsPaise = 0
+    for (const b of activeBookings) {
+      const paid = b.payments.reduce((acc, p) => p.isRefund ? acc - p.amount : acc + p.amount, 0)
+      if (b.totalAmount > paid) {
+        pendingPaymentsPaise += (b.totalAmount - paid)
+      }
+    }
+
+    // 4. Daily Trend Breakdown (Past 7 or 14 days)
+    const trendDaysCount = range === 'month' ? 30 : 7
+    const trendStartDate = subDays(endOfDay(now), trendDaysCount - 1)
+    const trendInterval = eachDayOfInterval({ start: startOfDay(trendStartDate), end: endOfDay(now) })
+
+    const [allRecentPayments, allRecentExpenses] = await Promise.all([
+      prisma.payment.findMany({
+        where: { paymentDate: { gte: trendStartDate, lte: endOfDay(now) } },
+      }),
+      prisma.expense.findMany({
+        where: { date: { gte: trendStartDate, lte: endOfDay(now) } },
+      }),
+    ])
+
+    const dailyTrends = trendInterval.map((day) => {
+      const dayStr = format(day, 'yyyy-MM-dd')
+      const displayLabel = format(day, 'dd MMM')
+
+      const dayPayments = allRecentPayments.filter((p) => {
+        const pDay = format(toZonedTime(p.paymentDate, HOTEL_TIMEZONE), 'yyyy-MM-dd')
+        return pDay === dayStr
+      })
+
+      const dayExpenses = allRecentExpenses.filter((e) => {
+        const eDay = format(toZonedTime(e.date, HOTEL_TIMEZONE), 'yyyy-MM-dd')
+        return eDay === dayStr
+      })
+
+      const revPaise = dayPayments.reduce((acc, p) => p.isRefund ? acc - p.amount : acc + p.amount, 0)
+      const expPaise = dayExpenses.reduce((acc, e) => acc + e.amount, 0)
+
       return {
-        roomNumber: `Room ${room.number}`,
-        type: room.type?.name || 'Standard',
-        revenueRupees: Math.round(totalPaise / 100),
+        date: displayLabel,
+        revenueRupees: Math.round(revPaise / 100),
+        expenseRupees: Math.round(expPaise / 100),
+        netProfitRupees: Math.round((revPaise - expPaise) / 100),
       }
     })
-    .sort((a, b) => b.revenueRupees - a.revenueRupees)
-    .slice(0, 8)
 
-  // 6. Booking Sources Breakdown
-  const allBookings = await prisma.booking.findMany({
-    select: { source: true },
-  })
+    // 5. Revenue by Room Breakdown
+    const roomRevenueMap = await prisma.room.findMany({
+      include: {
+        bookings: {
+          where: { status: { notIn: ['CANCELLED', 'NO_SHOW'] } },
+          include: { payments: true },
+        },
+        type: true,
+      },
+    })
 
-  const sourceCounts: Record<string, number> = {}
-  for (const b of allBookings) {
-    sourceCounts[b.source] = (sourceCounts[b.source] || 0) + 1
-  }
+    const revenueByRoom = roomRevenueMap
+      .map((room) => {
+        const totalPaise = room.bookings.reduce((sum, b) => {
+          const paid = b.payments.reduce((pSum, p) => pSum + p.amount, 0)
+          return sum + paid
+        }, 0)
+        return {
+          roomNumber: `Room ${room.number}`,
+          type: room.type?.name || 'Standard',
+          revenueRupees: Math.round(totalPaise / 100),
+        }
+      })
+      .sort((a, b) => b.revenueRupees - a.revenueRupees)
+      .slice(0, 8)
 
-  const bookingSourcesData = Object.entries(sourceCounts).map(([source, count]) => ({
-    name: source.replace('_', ' '),
-    value: count,
-  }))
+    // 6. Booking Sources Breakdown
+    const allBookings = await prisma.booking.findMany({
+      select: { source: true },
+    })
 
-  return {
-    kpis: {
-      recognizedRevenuePaise,
-      totalCollectedPaise,
-      totalExpensesPaise,
-      netOperatingProfitPaise,
-      cashFlowPaise,
-      occupancyRate,
-      totalRooms,
-      availableRooms,
-      occupiedRooms,
-      cleaningRooms,
-      maintenanceRooms,
-      reservedRooms,
-      checkInsCount,
-      checkOutsCount,
-      bookingsCreatedCount,
-      pendingPaymentsPaise,
-    },
-    charts: {
-      dailyTrends,
-      paymentsByMethod: [
-        { method: 'UPI', amountRupees: Math.round(paymentsByMethod.UPI / 100) },
-        { method: 'Cash', amountRupees: Math.round(paymentsByMethod.CASH / 100) },
-        { method: 'Card', amountRupees: Math.round(paymentsByMethod.CARD / 100) },
-        { method: 'Bank Transfer', amountRupees: Math.round(paymentsByMethod.BANK_TRANSFER / 100) },
-        { method: 'Other', amountRupees: Math.round(paymentsByMethod.OTHER / 100) },
-      ].filter((m) => m.amountRupees > 0),
-      revenueByRoom,
-      bookingSources: bookingSourcesData,
-    },
-    meta: {
-      range,
-      startDate: start.toISOString(),
-      endDate: end.toISOString(),
-    },
+    const sourceCounts: Record<string, number> = {}
+    for (const b of allBookings) {
+      sourceCounts[b.source] = (sourceCounts[b.source] || 0) + 1
+    }
+
+    const bookingSourcesData = Object.entries(sourceCounts).map(([source, count]) => ({
+      name: source.replace('_', ' '),
+      value: count,
+    }))
+
+    return {
+      kpis: {
+        recognizedRevenuePaise,
+        totalCollectedPaise,
+        totalExpensesPaise,
+        netOperatingProfitPaise,
+        cashFlowPaise,
+        occupancyRate,
+        totalRooms,
+        availableRooms,
+        occupiedRooms,
+        cleaningRooms,
+        maintenanceRooms,
+        reservedRooms,
+        checkInsCount,
+        checkOutsCount,
+        bookingsCreatedCount,
+        pendingPaymentsPaise,
+      },
+      charts: {
+        dailyTrends,
+        paymentsByMethod: [
+          { method: 'UPI', amountRupees: Math.round(paymentsByMethod.UPI / 100) },
+          { method: 'Cash', amountRupees: Math.round(paymentsByMethod.CASH / 100) },
+          { method: 'Card', amountRupees: Math.round(paymentsByMethod.CARD / 100) },
+          { method: 'Bank Transfer', amountRupees: Math.round(paymentsByMethod.BANK_TRANSFER / 100) },
+          { method: 'Other', amountRupees: Math.round(paymentsByMethod.OTHER / 100) },
+        ].filter((m) => m.amountRupees > 0),
+        revenueByRoom,
+        bookingSources: bookingSourcesData,
+      },
+      meta: {
+        range,
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+      },
+    }
+  } catch (error: any) {
+    console.error('getDashboardData error:', error)
+    return {
+      kpis: {
+        recognizedRevenuePaise: 0,
+        totalCollectedPaise: 0,
+        totalExpensesPaise: 0,
+        netOperatingProfitPaise: 0,
+        cashFlowPaise: 0,
+        occupancyRate: 0,
+        totalRooms: 0,
+        availableRooms: 0,
+        occupiedRooms: 0,
+        cleaningRooms: 0,
+        maintenanceRooms: 0,
+        reservedRooms: 0,
+        checkInsCount: 0,
+        checkOutsCount: 0,
+        bookingsCreatedCount: 0,
+        pendingPaymentsPaise: 0,
+      },
+      charts: {
+        dailyTrends: [],
+        paymentsByMethod: [],
+        revenueByRoom: [],
+        bookingSources: [],
+      },
+      meta: {
+        range,
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+      },
+      error: error?.message || 'Database tables or records not found',
+    }
   }
 }
