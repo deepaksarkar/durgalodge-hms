@@ -37,6 +37,10 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+<<<<<<< HEAD
+=======
+    "@tailwindcss/postcss": "^4",
+>>>>>>> origin/main
     "@types/node": "^20",
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
