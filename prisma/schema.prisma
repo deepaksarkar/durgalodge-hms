@@ -1,0 +1,274 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- ENUMS ---
+enum Role {
+  ADMIN
+  MANAGER
+  RECEPTION
+  STAFF
+}
+
+enum RoomStatus {
+  AVAILABLE
+  RESERVED
+  OCCUPIED
+  CLEANING
+  MAINTENANCE
+  OUT_OF_SERVICE
+}
+
+enum BookingStatus {
+  RESERVED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  UPI
+  CARD
+  BANK_TRANSFER
+  OTHER
+}
+
+enum BookingSource {
+  WALK_IN
+  PHONE
+  WHATSAPP
+  WEBSITE
+  OTA
+  OTHER
+}
+
+// --- MODELS ---
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  passwordHash String
+  name         String
+  role         Role       @default(RECEPTION)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  createdBookings Booking[]  @relation("CreatedByUser")
+  checkIns        Booking[]  @relation("CheckInUser")
+  payments        Payment[]  @relation("ReceivedBy")
+  expenses        Expense[]  @relation("ExpenseCreator")
+  auditLogs       AuditLog[]
+}
+
+model HotelSetting {
+  id              String   @id @default("durga-lodge-settings")
+  name            String   @default("DURGA LODGE")
+  currency        String   @default("INR")
+  timezone        String   @default("Asia/Kolkata")
+  address         String?  @default("Station Road, Near Bus Stand, Main Market")
+  city            String?  @default("Bhubaneswar")
+  state           String?  @default("Odisha")
+  country         String   @default("India")
+  phone           String?  @default("+91 98765 43210")
+  email           String?  @default("contact@durgalodge.com")
+  website         String?
+  gstNumber       String?
+  taxPercentage   Int      @default(1200) // 12.00% GST in basis points (1200 = 12%)
+  checkInTime     String   @default("12:00") // HH:MM
+  checkOutTime    String   @default("11:00") // HH:MM
+  invoiceTerms    String?  @default("Thank you for staying at DURGA LODGE. Government ID required at check-in. Standard checkout is 11:00 AM.")
+  allowNegativeBalanceCheckout Boolean @default(false)
+  updatedAt       DateTime @updatedAt
+}
+
+model RoomType {
+  id             String   @id @default(uuid())
+  name           String   // e.g., "Standard Non-AC", "Premium AC"
+  description    String?
+  baseTariff     Int      // Stored in paise (e.g. 100000 = ₹1,000.00)
+  capacity       Int      @default(2)
+  isAC           Boolean  @default(false)
+  isAttachedBath Boolean  @default(true)
+  rooms          Room[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model Room {
+  id          String     @id @default(uuid())
+  number      String     @unique
+  floor       String
+  status      RoomStatus @default(AVAILABLE)
+  isActive    Boolean    @default(true)
+  notes       String?
+  typeId      String
+  type        RoomType   @relation(fields: [typeId], references: [id])
+  bookings    Booking[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Guest {
+  id          String    @id @default(uuid())
+  fullName    String
+  phone       String    @unique
+  email       String?
+  address     String?
+  city        String?
+  state       String?
+  country     String    @default("India")
+  idType      String?   // Aadhar, PAN, Passport, Driving License, Voter ID
+  idNumber    String?
+  notes       String?
+  bookings    Booking[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Booking {
+  id             String         @id @default(uuid())
+  bookingNumber  String?        @unique // Formatted reference: DL-YYYYMMDD-XXXX
+  guestId        String
+  guest          Guest          @relation(fields: [guestId], references: [id])
+  roomId         String
+  room           Room           @relation(fields: [roomId], references: [id])
+  
+  checkInDate    DateTime       // Scheduled check-in date
+  checkoutDate   DateTime?      // Scheduled checkout date (nullable for open-ended / flexible stays)
+  actualCheckIn  DateTime?
+  actualCheckOut DateTime?
+  
+  adults         Int            @default(1)
+  children       Int            @default(0)
+  
+  // Financials (Stored in integer Paise)
+  roomTariff     Int            // Per night tariff in paise
+  nights         Int            @default(1)
+  extraCharges   Int            @default(0) // Daily extra charges in paise
+  discount       Int            @default(0) // Daily discount in paise
+  taxRate        Int            @default(0) // GST percentage in basis points (0 = 0%, 1200 = 12%)
+  tax            Int            @default(0)
+  totalAmount    Int            // ((Tariff + extraCharges - discount) * nights) + tax
+  
+  source         BookingSource  @default(WALK_IN)
+  status         BookingStatus  @default(RESERVED)
+  paymentStatus  PaymentStatus  @default(UNPAID)
+  
+  notes          String?
+  createdById    String?
+  createdBy      User?          @relation("CreatedByUser", fields: [createdById], references: [id])
+  checkInUserId  String?
+  checkInUser    User?          @relation("CheckInUser", fields: [checkInUserId], references: [id])
+
+  payments       Payment[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  // Double-booking index for high performance overlap queries
+  @@index([roomId, checkInDate, checkoutDate, status])
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  bookingId      String
+  booking        Booking       @relation(fields: [bookingId], references: [id])
+  amount         Int           // In integer paise
+  method         PaymentMethod
+  reference      String?       // UPI Ref / Transaction ID / Card Auth code
+  notes          String?
+  isRefund       Boolean       @default(false)
+  paymentDate    DateTime      @default(now())
+  
+  receivedById   String
+  receivedBy     User          @relation("ReceivedBy", fields: [receivedById], references: [id])
+  createdAt      DateTime      @default(now())
+}
+
+model ExpenseCategory {
+  id          String    @id @default(uuid())
+  name        String    @unique
+  description String?
+  expenses    Expense[]
+  createdAt   DateTime  @default(now())
+}
+
+model Expense {
+  id             String          @id @default(uuid())
+  date           DateTime
+  amount         Int             // In integer paise
+  categoryId     String
+  category       ExpenseCategory @relation(fields: [categoryId], references: [id])
+  method         PaymentMethod
+  vendor         String?
+  reference      String?
+  receiptUrl     String?         // Stored receipt relative path / URL
+  notes          String?
+  
+  createdById    String
+  createdBy      User            @relation("ExpenseCreator", fields: [createdById], references: [id])
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+model DailyClosing {
+  id                  String    @id @default(uuid())
+  businessDate        DateTime  @unique @db.Date // Hotel business date (Asia/Kolkata)
+  openingCash         Int       @default(0)      // In paise
+  cashCollected       Int       @default(0)      // In paise
+  upiCollected        Int       @default(0)      // In paise
+  cardCollected       Int       @default(0)      // In paise
+  bankCollected       Int       @default(0)      // In paise
+  otherCollected      Int       @default(0)      // In paise
+  cashExpenses        Int       @default(0)      // In paise
+  expectedCash        Int       @default(0)      // openingCash + cashCollected - cashExpenses
+  actualCash          Int       @default(0)      // In paise
+  difference          Int       @default(0)      // actualCash - expectedCash
+  
+  totalRevenue        Int       @default(0)      // Recognized gross booking revenue in paise
+  totalExpenses       Int       @default(0)      // Total expenses in paise
+  netResult           Int       @default(0)      // totalRevenue - totalExpenses in paise
+  
+  bookingsCreated     Int       @default(0)
+  checkInsCount       Int       @default(0)
+  checkOutsCount      Int       @default(0)
+  cancelledCount      Int       @default(0)
+  outstandingBalances Int       @default(0)      // In paise
+  
+  isFinalized         Boolean   @default(false)
+  finalizedBy         String?
+  finalizedAt         DateTime?
+  notes               String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  action     String   // e.g., "BOOKING_CREATED", "CHECK_IN", "PAYMENT_ADDED"
+  entity     String   // e.g., "Booking", "Room", "Expense", "DailyClosing"
+  entityId   String
+  metadata   Json?    // Context payload
+  ipAddress  String?
+  timestamp  DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([userId, timestamp])
+}

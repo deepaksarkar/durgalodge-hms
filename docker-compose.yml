@@ -1,0 +1,61 @@
+# Docker Compose for DURGA LODGE — Hotel Management System
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: durga_lodge_app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://admin:${POSTGRES_PASSWORD:-secure_password_here}@postgres:5432/durga_lodge?schema=public
+      - AUTH_SECRET=${AUTH_SECRET:-super_secret_production_key_minimum_32_characters_long!!}
+      - HOTEL_TIMEZONE=${HOTEL_TIMEZONE:-Asia/Kolkata}
+      - CURRENCY=${CURRENCY:-INR}
+      - STORAGE_PATH=/app/public/uploads/receipts
+    volumes:
+      - receipts_data:/app/public/uploads/receipts
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: durga_lodge_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_here}
+      POSTGRES_DB: ${POSTGRES_DB:-durga_lodge}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-admin} -d ${POSTGRES_DB:-durga_lodge}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Optional Cloudflare Tunnel service for secure remote access without public IP
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: durga_lodge_tunnel
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    profiles:
+      - tunnel
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+    name: durga_lodge_pgdata
+  receipts_data:
+    name: durga_lodge_receipts
