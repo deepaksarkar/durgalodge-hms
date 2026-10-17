@@ -1,3 +1,4 @@
+// src/app/(dashboard)/dashboard/page.tsx
 import React from 'react'
 import { getDashboardData, TimeRangeFilter } from '@/server/actions/dashboard-actions'
 import { syncActiveFlexibleBookings } from '@/server/actions/booking-actions'
@@ -10,14 +11,19 @@ export default async function DashboardPage({
 }: {
   searchParams: Promise<{ range?: string; startDate?: string; endDate?: string }>
 }) {
-  await syncActiveFlexibleBookings()
+  try {
+    await syncActiveFlexibleBookings()
+  } catch (err) {
+    console.warn('Flexible bookings sync skipped on initial render:', err)
+  }
+
   const params = await searchParams
-  const range = (params.range as TimeRangeFilter) || 'today'
+  const range = (params?.range as TimeRangeFilter) || 'today'
 
   const data = await getDashboardData({
     range,
-    startDate: params.startDate,
-    endDate: params.endDate,
+    startDate: params?.startDate,
+    endDate: params?.endDate,
   })
 
   return <DashboardView data={data} />

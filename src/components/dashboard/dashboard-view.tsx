@@ -44,6 +44,11 @@ export function DashboardView({ data }: { data: any }) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const currentRange = (searchParams.get('range') as TimeRangeFilter) || 'today'
+  const [isMounted, setIsMounted] = useState(false)
+
+  React.useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   const handleRangeChange = (range: TimeRangeFilter) => {
     const params = new URLSearchParams(searchParams.toString())
@@ -251,29 +256,35 @@ export function DashboardView({ data }: { data: any }) {
           </div>
 
           <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={charts.dailyTrends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#d97706" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#d97706" stopOpacity={0.0} />
-                  </linearGradient>
-                  <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="date" stroke="#64748b" fontSize={11} />
-                <YAxis stroke="#64748b" fontSize={11} tickFormatter={(v) => `₹${v}`} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '0.75rem', fontSize: '12px' }}
-                  formatter={(val: any) => [`₹${val}`, '']}
-                />
-                <Area type="monotone" dataKey="revenueRupees" name="Revenue" stroke="#d97706" fillOpacity={1} fill="url(#colorRev)" />
-                <Area type="monotone" dataKey="expenseRupees" name="Expenses" stroke="#f43f5e" fillOpacity={1} fill="url(#colorExp)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            {!isMounted ? (
+              <div className="h-full w-full bg-slate-950/40 rounded-xl animate-pulse flex items-center justify-center text-xs text-slate-600">
+                Loading analytics trend...
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={charts.dailyTrends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#d97706" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#d97706" stopOpacity={0.0} />
+                    </linearGradient>
+                    <linearGradient id="colorExp" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#f43f5e" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                  <XAxis dataKey="date" stroke="#64748b" fontSize={11} />
+                  <YAxis stroke="#64748b" fontSize={11} tickFormatter={(v) => `₹${v}`} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '0.75rem', fontSize: '12px' }}
+                    formatter={(val: any) => [`₹${val}`, '']}
+                  />
+                  <Area type="monotone" dataKey="revenueRupees" name="Revenue" stroke="#d97706" fillOpacity={1} fill="url(#colorRev)" />
+                  <Area type="monotone" dataKey="expenseRupees" name="Expenses" stroke="#f43f5e" fillOpacity={1} fill="url(#colorExp)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -290,7 +301,11 @@ export function DashboardView({ data }: { data: any }) {
           </div>
 
           <div className="h-56 w-full flex items-center justify-center">
-            {charts.paymentsByMethod.length === 0 ? (
+            {!isMounted ? (
+              <div className="h-full w-full bg-slate-950/40 rounded-xl animate-pulse flex items-center justify-center text-xs text-slate-600">
+                Loading payment methods...
+              </div>
+            ) : charts.paymentsByMethod.length === 0 ? (
               <p className="text-xs text-slate-500 italic">No collections in this period</p>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
@@ -336,7 +351,11 @@ export function DashboardView({ data }: { data: any }) {
           </div>
 
           <div className="h-64 w-full">
-            {charts.revenueByRoom.length === 0 ? (
+            {!isMounted ? (
+              <div className="h-full w-full bg-slate-950/40 rounded-xl animate-pulse flex items-center justify-center text-xs text-slate-600">
+                Loading room metrics...
+              </div>
+            ) : charts.revenueByRoom.length === 0 ? (
               <div className="h-full flex items-center justify-center text-xs text-slate-500 italic">
                 No room revenue recorded yet
               </div>

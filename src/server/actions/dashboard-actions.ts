@@ -211,7 +211,7 @@ export async function getDashboardData(options: {
       }, 0)
       return {
         roomNumber: `Room ${room.number}`,
-        type: room.type.name,
+        type: room.type?.name || 'Standard',
         revenueRupees: Math.round(totalPaise / 100),
       }
     })

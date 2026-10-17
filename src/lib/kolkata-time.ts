@@ -17,47 +17,6 @@ export interface LiveKolkataTime {
  * Gracefully falls back to system clock in Asia/Kolkata timezone on failure/timeout.
  */
 export async function getLiveKolkataTime(): Promise<LiveKolkataTime> {
-  try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 2500) // 2.5 second timeout
-
-    const res = await fetch('https://timeapi.io/api/Time/current/zone?timeZone=Asia/Kolkata', {
-      signal: controller.signal,
-      cache: 'no-store',
-      headers: {
-        Accept: 'application/json',
-      },
-    })
-
-    clearTimeout(timeoutId)
-
-    if (res.ok) {
-      const data = await res.json()
-      if (data && data.dateTime) {
-        // e.g. "2026-10-07T20:23:40.2730082" in Asia/Kolkata (+05:30)
-        const date = fromZonedTime(data.dateTime, HOTEL_TIMEZONE)
-        if (!isNaN(date.getTime())) {
-          const hours = String(data.hour).padStart(2, '0')
-          const minutes = String(data.minute).padStart(2, '0')
-          const year = data.year
-          const month = String(data.month).padStart(2, '0')
-          const day = String(data.day).padStart(2, '0')
-
-          return {
-            date,
-            source: 'timeapi',
-            timeString: `${hours}:${minutes}`,
-            dateString: `${year}-${month}-${day}`,
-            dateTimeString: data.dateTime,
-          }
-        }
-      }
-    }
-  } catch {
-    // Network error or timeout, safely fall back
-  }
-
-  // Graceful fallback to system clock in Asia/Kolkata
   const now = new Date()
   const zoned = toZonedTime(now, HOTEL_TIMEZONE)
   const pad = (n: number) => String(n).padStart(2, '0')

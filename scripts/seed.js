@@ -3,10 +3,14 @@ require('dotenv').config();
 const { Pool } = require('pg');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const { PrismaClient } = require('@prisma/client');
-const argon2 = require('argon2');
+const bcrypt = require('bcryptjs');
 
 const connectionString = process.env.DATABASE_URL || 'postgresql://admin:secure_password_here@localhost:5432/durga_lodge';
-const pool = new Pool({ connectionString });
+const isLocalhost = connectionString.includes('localhost') || connectionString.includes('127.0.0.1') || connectionString.includes('sslmode=disable');
+const pool = new Pool({
+  connectionString,
+  ssl: isLocalhost ? false : { rejectUnauthorized: false },
+});
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
@@ -14,7 +18,8 @@ async function main() {
   console.log('🌱 Starting DURGA LODGE Database Seeding...');
 
   // 1. Create Users
-  const password = await argon2.hash('admin123');
+  const salt = await bcrypt.genSalt(10);
+  const password = await bcrypt.hash('admin123', salt);
   const admin = await prisma.user.upsert({
     where: { email: 'admin@durgalodge.com' },
     update: {},
@@ -26,7 +31,7 @@ async function main() {
     },
   });
 
-  const managerPass = await argon2.hash('manager123');
+  const managerPass = await bcrypt.hash('manager123', salt);
   const manager = await prisma.user.upsert({
     where: { email: 'manager@durgalodge.com' },
     update: {},
@@ -38,7 +43,7 @@ async function main() {
     },
   });
 
-  const receptionPass = await argon2.hash('reception123');
+  const receptionPass = await bcrypt.hash('reception123', salt);
   const reception = await prisma.user.upsert({
     where: { email: 'reception@durgalodge.com' },
     update: {},
@@ -50,7 +55,7 @@ async function main() {
     },
   });
 
-  const staffPass = await argon2.hash('staff123');
+  const staffPass = await bcrypt.hash('staff123', salt);
   await prisma.user.upsert({
     where: { email: 'staff@durgalodge.com' },
     update: {},
